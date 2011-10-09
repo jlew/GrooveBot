@@ -1,5 +1,5 @@
 from PluginFramework import MediaSourceMount
-from Constants import Status
+from Constants import States
 
 class MediaSource(object):
     __metaclass__ = MediaSourceMount
@@ -19,5 +19,5 @@ class MediaSource(object):
         pass
 
     def status(self):
-        return Status.STOP, "Stopped"
+        return States.STOP, "Stopped"
 

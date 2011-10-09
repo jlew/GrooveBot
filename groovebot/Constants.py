@@ -3,5 +3,6 @@ class States(object):
     PLAY = "Playing"
     PAUSE = "Paused"
     STOP = "Stopped"
-    ERROR = "Error/Stopped"
+    ERROR = "Error"
+    INIT = "Initializing"
 

@@ -1,15 +1,15 @@
 # Import twisted libraries
 from twisted.internet.defer import DeferredList
 from twisted.internet.threads import deferToThread
-from twisted.internet import reactor
 from twisted.python import log
 
 # Import GrooveBot Classes
-from MediaSource import MediaSource
-from Queue import QueueContainer#, QueueObject
-from MediaController import MediaController
+from groovebot.MediaSource import MediaSource
+from groovebot.Queue import QueueContainer#, QueueObject
+from groovebot.MediaController import MediaController
 
-import os, sys
+import os
+
 class GrooveBot(object):
     _instance = None
     def __new__(cls, *args, **kwargs):
@@ -21,14 +21,14 @@ class GrooveBot(object):
         self.__mediaSources = {}
         self.__controllers = {}
         self.__activeSource = None
-        self.__Queue = QueueContainer()
+        self.__queue = QueueContainer()
 
         # Import Sources
-        for f in os.listdir(os.path.abspath("plugins/")):
+        for f in os.listdir(os.path.join(os.path.dirname(__file__), "plugins")):
             module_name, ext = os.path.splitext(f)
             if module_name != "__init__" and ext == '.py':
                 log.msg('importing Plugin: %s' % module_name)
-                __import__("plugins." + module_name)
+                __import__("groovebot.plugins." + module_name)
 
         # Create the imported Media Sources and register with GrooveBot
         for plugin in MediaSource.plugins:
@@ -47,7 +47,27 @@ class GrooveBot(object):
         log.msg("Registering Controller: %s" % controllerId)
         self.__controllers[controllerId] = controllerObj
 
-    def initiateSearch(self, text):
+    def initiateSearch(self, search_context, text):
+        """
+        Fires off a search in parallel to all the registered sources.
+        When all the sources return their results (which will be in
+        form of a list of media objects that match), the lists will
+        be joined and sent to all controller searchCompleted methods.
+        It is up to the controllers how they handle a request by using
+        the search context (some controllers will listen for all where
+        others may want to only react to requests by their own controller
+        and/or user).
+
+        @param search_context
+                A search context object that stores information
+                that may be needed by controllers sending the
+                search request.  This object has information about
+                the user, the source, and any extra context information
+                if needed.
+
+        @param text
+                The text to be searched for in all the sources.
+        """
         searches = []
         log.msg("Searching: %s" % text)
 
@@ -56,11 +76,17 @@ class GrooveBot(object):
             log.msg("\t%s:\t %s" % (key, text))
             searches.append(deferToThread(mediasrc.search, text))
 
-        # When all searches return, send result lists to all the
-        # media controllers
+        # When all searches return combine them.  The lists will be
+        # returned as a list of a touples consisting of a sucess/failure
+        # boolean followed by the results returned by the individual source
         dl = DeferredList(searches)
 
         def sendResults(results):
+            """
+            Combines the results returned by the deferred list
+            into master_result and passes it to all the registered
+            controllers.
+            """
             master_result = []
             for status, result in results:
                 if status:
@@ -69,7 +95,7 @@ class GrooveBot(object):
             log.msg("Combined Results: %s" % master_result)
             for key, mediactr in self.__controllers.items():
                 log.msg("\tSending Result to %s" % key)
-                mediactr.searchCompleted(master_result)
+                mediactr.searchCompleted(search_context, master_result)
 
         dl.addCallback(sendResults)
 
@@ -94,10 +120,3 @@ class GrooveBot(object):
     def getPlayedItems(self):
         return self.__queue.getPlayedItems()
 
-if __name__ == "__main__":
-    #log.startLogging(open('log.txt', 'w'))
-    log.startLogging(sys.stdout)
-
-    g = GrooveBot()
-    reactor.callLater(2, g.initiateSearch, "TEST")
-    reactor.run()

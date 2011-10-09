@@ -8,5 +8,5 @@ class MediaController(object):
     def statusChange(self, status):
         print "Status Changed: ", status
 
-    def searchCompleted(self, search_results):
+    def searchCompleted(self, context, search_results):
         print "Search Completed: ", search_results

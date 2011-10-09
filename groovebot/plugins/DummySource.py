@@ -1,4 +1,4 @@
-from MediaSource import MediaSource
+from groovebot.MediaSource import MediaSource
 
 
 import time
