@@ -30,3 +30,6 @@ class QueueObject(object):
 
     def _setPlayed(self):
         self.played = datetime.now()
+        
+    def __str__(self):
+        return "%s - %s" % (self.queueDate.strftime('%I:%M'), self.mediaObj)

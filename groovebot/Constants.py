@@ -6,3 +6,7 @@ class States(object):
     ERROR = "Error"
     INIT = "Initializing"
 
+class QueueActions(object):
+    ADD = "ADDED"
+    REMOVED = "REMOVED"
+    PLAYED = "PLAYED"

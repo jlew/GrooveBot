@@ -6,7 +6,7 @@ from twisted.python import log
 # Import GrooveBot Classes
 from groovebot.ActionType import MediaSource, MediaController
 from groovebot.Queue import QueueContainer, QueueObject
-from groovebot.Constants import States
+from groovebot.Constants import States, QueueActions
 
 import os
 
@@ -14,6 +14,7 @@ __runningPlugins = {}
 __mediaSources = {}
 __controllers = {}
 __activeSource = None
+__activeQueue = None
 __queue = QueueContainer()
 __initalized = False
 
@@ -88,10 +89,15 @@ def initiateSearch(search_context, text):
 def queue(mediaObj):
     log.msg("Queueing %s" % mediaObj)
     
-    __queue.add(QueueObject(mediaObj))
+    qob = QueueObject(mediaObj)
+    __queue.add(qob)
     
     if not __activeSource:
         play()
+    else:
+        for key, mediactr in __controllers.items():
+            log.msg("\tSending Queue Change to %s" % key)
+        mediactr.queueUpdated(QueueActions.ADD, qob)
     
 
 def pause():
@@ -108,11 +114,17 @@ def stop():
 
 def play():
     global __activeSource
+    global __activeQueue
     nextItem = __queue.getNext()
     if nextItem:
         log.msg("Playing %s" % nextItem.mediaObj)
         __activeSource = nextItem.mediaObj.source
+        __activeQueue = nextItem
         __activeSource.play(nextItem.mediaObj.mid)
+        
+        for key, mediactr in __controllers.items():
+            log.msg("\tSending Queue Change to %s" % key)
+        mediactr.queueUpdated(QueueActions.PLAYED, __activeQueue)
 
     else:
         log.msg("Queue Is Empty")
@@ -125,14 +137,19 @@ def getPlayedItems():
     return __queue.getPlayedItems()
 
 def updateStatus(status, text):
+    global _activeSource
+    global _activeQueue
     log.msg("Status %s: %s" %(status, text))
     if status == States.STOP:
         __activeSource = None
+        __activeQueue = None
         play()
 
 def getStatus():
     if __activeSource:
-        return __activeSource.status()
+        return __activeQueue, __activeSource.status()
+    else:
+        return None, (States.STOP, "")
     
 if not __initalized:
     log.msg("Initalizing GrooveBot")

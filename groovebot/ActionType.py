@@ -1,5 +1,5 @@
 from PluginFramework import MediaControllerMount, MediaSourceMount, ConfigurableMount
-from Constants import States
+from Constants import States, QueueActions
 
 class MediaController(object):
     __metaclass__ = MediaControllerMount
@@ -8,6 +8,9 @@ class MediaController(object):
 
     def statusUpdate(self, status):
         print "Status Changed: ", status
+        
+    def queueUpdated(self, action, queueObject):
+        print "Queued Updated", action, queueObject
 
     def searchCompleted(self, context, search_results):
         for media_item in search_results:
