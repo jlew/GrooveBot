@@ -1,17 +1,21 @@
 # Import twisted libraries
+from twisted.internet import gtk2reactor
+gtk2reactor.install()
 from twisted.internet import reactor
 from twisted.python import log
 
-# Import GrooveBot Classes
-from groovebot.GrooveBot import GrooveBot
+   
 import sys
+log.startLogging(sys.stdout)
 
-if __name__ == "__main__":
-    #log.startLogging(open('log.txt', 'w'))
-    log.startLogging(sys.stdout)
+# Import GrooveBot Classes
+from groovebot import GrooveBot
+from groovebot.SearchContext import SearchContext
 
-    from groovebot.SearchContext import SearchContext
+reactor.callLater(2, GrooveBot.initiateSearch, SearchContext("NO SOURCE"), "TEST")
 
-    g = GrooveBot()
-    reactor.callLater(2, g.initiateSearch, SearchContext("user",None), "TEST")
-    reactor.run()
+def p():
+    print GrooveBot.getStatus()
+    reactor.callLater(2, p)
+reactor.callLater(2, p)
+reactor.run()

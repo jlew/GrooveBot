@@ -4,10 +4,12 @@ class QueueContainer(object):
         self.__queued = []
 
     def getNext(self):
-        nextItm = self.__queued.pop(0)
-        self.__played.append(nextItm)
-        nextItm._setPlayed()
-        return nextItm
+        if len(self.__queued):
+            nextItm = self.__queued.pop(0)
+            self.__played.append(nextItm)
+            nextItm._setPlayed()
+            return nextItm
+        return None
 
     def add(self, queueobj):
         self.__queued.append(queueobj)
@@ -21,8 +23,7 @@ class QueueContainer(object):
 
 from datetime import datetime
 class QueueObject(object):
-    def __init__(self, user, mediaObj):
-        self.user = user
+    def __init__(self, mediaObj):
         self.mediaObj = mediaObj
         self.queueDate = datetime.now()
         self.played = False

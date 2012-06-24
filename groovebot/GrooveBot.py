@@ -4,119 +4,154 @@ from twisted.internet.threads import deferToThread
 from twisted.python import log
 
 # Import GrooveBot Classes
-from groovebot.MediaSource import MediaSource
-from groovebot.Queue import QueueContainer#, QueueObject
-from groovebot.MediaController import MediaController
+from groovebot.ActionType import MediaSource, MediaController
+from groovebot.Queue import QueueContainer, QueueObject
+from groovebot.Constants import States
 
 import os
 
-class GrooveBot(object):
-    _instance = None
-    def __new__(cls, *args, **kwargs):
-        if not cls._instance:
-            cls._instance = super(GrooveBot, cls).__new__(cls, *args, **kwargs)
-        return cls._instance
+__runningPlugins = {}
+__mediaSources = {}
+__controllers = {}
+__activeSource = None
+__queue = QueueContainer()
+__initalized = False
 
-    def __init__(self):
-        self.__mediaSources = {}
-        self.__controllers = {}
-        self.__activeSource = None
-        self.__queue = QueueContainer()
+def registerSource(sourceId, sourceObj):
+    log.msg("Registering Source: %s" % sourceId)
+    if sourceId in __runningPlugins:
+        __mediaSources[sourceId] = __runningPlugins[sourceId]
+    else:
+        log.msg("Creating new instance of plugin")
+        __mediaSources[sourceId] = sourceObj()
 
-        # Import Sources
-        for f in os.listdir(os.path.join(os.path.dirname(__file__), "plugins")):
-            module_name, ext = os.path.splitext(f)
-            if module_name != "__init__" and ext == '.py':
-                log.msg('importing Plugin: %s' % module_name)
-                __import__("groovebot.plugins." + module_name)
+def registerController(controllerId, controllerObj):
+    log.msg("Registering Controller: %s" % controllerId)
+    if controllerId in __runningPlugins:
+        __controllers[controllerId] = __runningPlugins[controllerId]
+    else:
+        log.msg("Creating new instance of plugin")
+        __controllers[controllerId] = controllerObj()
 
-        # Create the imported Media Sources and register with GrooveBot
-        for plugin in MediaSource.plugins:
-            self.registerSource(plugin.__name__, plugin())
+def initiateSearch(search_context, text):
+    """
+    Fires off a search in parallel to all the registered sources.
+    When all the sources return their results (which will be in
+    form of a list of media objects that match), the lists will
+    be joined and sent to all controller searchCompleted methods.
+    It is up to the controllers how they handle a request by using
+    the search context (some controllers will listen for all where
+    others may want to only react to requests by their own controller
+    and/or user).
 
-        # Create the imported Media Controllers and register with GrooveBot
-        for plugin in MediaController.plugins:
-            self.registerController(plugin.__name__, plugin())
+    @param search_context
+            A search context object that stores information
+            that may be needed by controllers sending the
+            search request.  This object has information about
+            the user, the source, and any extra context information
+            if needed.
 
+    @param text
+            The text to be searched for in all the sources.
+    """
+    searches = []
+    log.msg("Searching: \033[94m%s\033[0m" % text)
 
-    def registerSource(self, sourceId, sourceObj):
-        log.msg("Registering Source: %s" % sourceId)
-        self.__mediaSources[sourceId] = sourceObj
+    # Fire off search in parallel
+    for key, mediasrc in __mediaSources.items():
+        log.msg("\tSending Search Request to \033[92m%s\033[0m" % key)
+        searches.append(deferToThread(mediasrc.search, text))
 
-    def registerController(self, controllerId, controllerObj):
-        log.msg("Registering Controller: %s" % controllerId)
-        self.__controllers[controllerId] = controllerObj
+    # When all searches return combine them.  The lists will be
+    # returned as a list of a touples consisting of a sucess/failure
+    # boolean followed by the results returned by the individual source
+    dl = DeferredList(searches)
 
-    def initiateSearch(self, search_context, text):
+    def sendResults(results):
         """
-        Fires off a search in parallel to all the registered sources.
-        When all the sources return their results (which will be in
-        form of a list of media objects that match), the lists will
-        be joined and sent to all controller searchCompleted methods.
-        It is up to the controllers how they handle a request by using
-        the search context (some controllers will listen for all where
-        others may want to only react to requests by their own controller
-        and/or user).
-
-        @param search_context
-                A search context object that stores information
-                that may be needed by controllers sending the
-                search request.  This object has information about
-                the user, the source, and any extra context information
-                if needed.
-
-        @param text
-                The text to be searched for in all the sources.
+        Combines the results returned by the deferred list
+        into master_result and passes it to all the registered
+        controllers.
         """
-        searches = []
-        log.msg("Searching: %s" % text)
+        log.msg("Search Returned from all sources")
+        master_result = []
+        for status, result in results:
+            if status:
+                master_result += result
 
-        # Fire off search in parallel
-        for key, mediasrc in self.__mediaSources.items():
-            log.msg("\t%s:\t %s" % (key, text))
-            searches.append(deferToThread(mediasrc.search, text))
+        for key, mediactr in __controllers.items():
+            log.msg("\tSending Result to \033[92m%s\033[0m" % key)
+            mediactr.searchCompleted(search_context, master_result)
 
-        # When all searches return combine them.  The lists will be
-        # returned as a list of a touples consisting of a sucess/failure
-        # boolean followed by the results returned by the individual source
-        dl = DeferredList(searches)
+    dl.addCallback(sendResults)
 
-        def sendResults(results):
-            """
-            Combines the results returned by the deferred list
-            into master_result and passes it to all the registered
-            controllers.
-            """
-            master_result = []
-            for status, result in results:
-                if status:
-                    master_result += result
+def queue(mediaObj):
+    log.msg("Queueing %s" % mediaObj)
+    
+    __queue.add(QueueObject(mediaObj))
+    
+    if not __activeSource:
+        play()
+    
 
-            log.msg("Combined Results: %s" % master_result)
-            for key, mediactr in self.__controllers.items():
-                log.msg("\tSending Result to %s" % key)
-                mediactr.searchCompleted(search_context, master_result)
+def pause():
+    if __activeSource:
+        __activeSource.pause()
 
-        dl.addCallback(sendResults)
+def resume():
+    if __activeSource:
+        __activeSource.resume()
 
-    def queue(self, queueObj):
-        self.__queue.add(queueObj)
+def stop():
+    if __activeSource:
+        __activeSource.stop()
 
-    def pause(self):
-        pass
+def play():
+    global __activeSource
+    nextItem = __queue.getNext()
+    if nextItem:
+        log.msg("Playing %s" % nextItem.mediaObj)
+        __activeSource = nextItem.mediaObj.source
+        __activeSource.play(nextItem.mediaObj.mid)
 
-    def resume(self):
-        pass
+    else:
+        log.msg("Queue Is Empty")
+        #TODO: Radio
 
-    def stop(self):
-        pass
+def getQueuedItems():
+    return __queue.getQueuedItems()
 
-    def play(self):
-        pass
+def getPlayedItems():
+    return __queue.getPlayedItems()
 
-    def getQueuedItems(self):
-        return self.__queue.getQueuedItems()
+def updateStatus(status, text):
+    log.msg("Status %s: %s" %(status, text))
+    if status == States.STOP:
+        __activeSource = None
+        play()
 
-    def getPlayedItems(self):
-        return self.__queue.getPlayedItems()
-
+def getStatus():
+    if __activeSource:
+        return __activeSource.status()
+    
+if not __initalized:
+    log.msg("Initalizing GrooveBot")
+    __initalized = True
+    
+    log.msg("Loading GrooveBot Plugins")
+    # Import Sources
+    for f in os.listdir(os.path.join(os.path.dirname(__file__), "plugins")):
+        module_name, ext = os.path.splitext(f)
+        if module_name != "__init__" and ext == '.py':
+            log.msg('importing Plugin: %s' % module_name)
+            __import__("groovebot.plugins." + module_name)
+    
+    # Create the imported Media Sources and register with GrooveBot
+    for plugin in MediaSource.plugins:
+        registerSource(plugin.__name__, plugin)
+    
+    # Create the imported Media Controllers and register with GrooveBot
+    for plugin in MediaController.plugins:
+        registerController(plugin.__name__, plugin)
+                
+    log.msg("GrooveBot Plugins Loaded")
