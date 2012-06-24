@@ -55,11 +55,11 @@ def initiateSearch(search_context, text):
             The text to be searched for in all the sources.
     """
     searches = []
-    log.msg("Searching: \033[94m%s\033[0m" % text)
+    log.msg("Searching: %s" % text)
 
     # Fire off search in parallel
     for key, mediasrc in __mediaSources.items():
-        log.msg("\tSending Search Request to \033[92m%s\033[0m" % key)
+        log.msg("\tSending Search Request to %s" % key)
         searches.append(deferToThread(mediasrc.search, text))
 
     # When all searches return combine them.  The lists will be
@@ -80,7 +80,7 @@ def initiateSearch(search_context, text):
                 master_result += result
 
         for key, mediactr in __controllers.items():
-            log.msg("\tSending Result to \033[92m%s\033[0m" % key)
+            log.msg("\tSending Result to %s" % key)
             mediactr.searchCompleted(search_context, master_result)
 
     dl.addCallback(sendResults)
