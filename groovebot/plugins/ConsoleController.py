@@ -2,7 +2,9 @@ from groovebot.ActionType import MediaController
 from groovebot.GrooveBot import queue, initiateSearch, getStatus, getQueuedItems
 from groovebot.SearchContext import SearchContext
 from twisted.internet import reactor, task
-from twisted.python import log
+from twisted.python import log, reflect
+import curses
+from datetime import datetime
 
 class ConsoleReader(MediaController):
     def __init__(self):
@@ -11,7 +13,20 @@ class ConsoleReader(MediaController):
                 self.con = con
 
             def emit(self, eventDict):
-                self.con.addLine(eventDict['message'][0])
+                edm = eventDict['message']
+                if not edm:
+                    if eventDict['isError'] and 'failure' in eventDict:
+                        text = ((eventDict.get('why') or 'Unhandled Error')
+                                + '\n' + eventDict['failure'].getTraceback())
+                    elif 'format' in eventDict:
+                        text = eventDict['format'] % eventDict
+                    else:
+                        text = str(eventDict)
+                else:
+                    text = ' '.join(map(reflect.safe_str, edm))
+                
+                self.con.addLine(text)
+
 
         stdscr = curses.initscr() # initialize curses
         self.screen = Screen(stdscr)   # create Screen object
@@ -21,13 +36,6 @@ class ConsoleReader(MediaController):
         
         task.LoopingCall(self.screen.updateDisplay).start(.25)
 
-#        def doSearch():
-#            while(True):
-#                searchText = raw_input(">")
-#                initiateSearch(SearchContext(self), searchText)
-#            
-#        
-#        reactor.callInThread(doSearch)
 
     def searchCompleted(self, context, search_results):
         media_item = None
@@ -43,13 +51,6 @@ class ConsoleReader(MediaController):
         print "Queue %s @%s" % (action,queueObject)
         self.screen.updateQueue()
 
-# System Imports
-import curses
-
-# Twisted imports
-from twisted.internet import reactor
-from twisted.internet.protocol import ClientFactory
-from twisted.python import log
 
 class TextBlock:
     def __init__(self, parent_screen, title, x, y, width, height, scroll=True):
@@ -141,7 +142,6 @@ class Screen(CursesStdIO):
         curses.start_color()
 
         splitPoint = int((self.cols-4) * .80)
-        print self.cols, splitPoint
         self.logBox = TextBlock(self.stdscr, "Log", 1,2, splitPoint,  self.rows-4)
         self.queueBox = TextBlock(self.stdscr, "Queue", splitPoint,2, self.cols-splitPoint, self.rows-4, scroll=False)
         # create color pair's 1 and 2
@@ -153,6 +153,7 @@ class Screen(CursesStdIO):
         #curses.init_pair(1, curses.COLOR_BLACK, curses.COLOR_WHITE)
         #curses.init_pair(2, curses.COLOR_CYAN, curses.COLOR_BLACK)
 
+        self.updateQueue()
         self.updateDisplay()
 
     def connectionLost(self, reason):
@@ -164,12 +165,12 @@ class Screen(CursesStdIO):
 
     def updateQueue(self):
         self.queueBox.clear_messages()
-        qitems = getQueuedItems()
+        qitems = [x for x in getQueuedItems()]
         if qitems:
             self.queueBox.add_message("%d item(s) in the queue" % len(qitems))
             for item in qitems:
-                self.queueBox.add_message("%s %s" % (item.queueDate.strftime('%I:%M:%S'), item.mediaObj.artist))
-                self.queueBox.add_message("  %s" % (item.mediaObj.title))
+                self.queueBox.add_message("%s %s" % (item.queue_date.strftime('%I:%M:%S'), item.media_object.artist))
+                self.queueBox.add_message("  %s" % (item.media_object.title))
         else:
             self.queueBox.add_message("Queue Is Empty")
     def updateDisplay(self):
@@ -177,7 +178,7 @@ class Screen(CursesStdIO):
         #stdscr.box()
         queue, statusLookup = getStatus()
         if queue:
-            title = str(queue.mediaObj)
+            title = str(queue.media_object)
         else:
             title = "NOT PLAYING"
         
@@ -192,6 +193,7 @@ class Screen(CursesStdIO):
         offset = self.cols-(12+len(status)+len(stat_text))
             
         self.stdscr.addstr(0,0, " GrooveBot".ljust(self.cols), curses.color_pair(3))
+        self.stdscr.addstr(0,11, datetime.now().strftime("%m/%d/%y %H:%M:%S"), curses.color_pair(2))
         self.stdscr.addstr(1,2, title.ljust(offset), curses.A_BOLD)
         
         self.stdscr.addstr(1,offset, "Status:".ljust(self.cols-offset), curses.A_BOLD)
@@ -222,7 +224,7 @@ class Screen(CursesStdIO):
             initiateSearch(SearchContext(self), line)
             #self.updateDisplay()
 
-        else:
+        elif c <= 256:
             if len(self.searchText) == self.cols-2: return
             self.searchText = self.searchText + chr(c)
             #self.updateDisplay()

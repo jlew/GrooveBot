@@ -9,4 +9,4 @@ class States(object):
 class QueueActions(object):
     ADD = "ADDED"
     REMOVED = "REMOVED"
-    PLAYED = "PLAYED"
+    PLAY = "PLAYING"

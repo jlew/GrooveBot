@@ -5,9 +5,9 @@ from twisted.python import log
 
 # Import GrooveBot Classes
 from groovebot.ActionType import MediaSource, MediaController
-from groovebot.Queue import QueueContainer, QueueObject
 from groovebot.Constants import States, QueueActions
 
+from groovebot.db import Queue, Session
 import os
 
 __runningPlugins = {}
@@ -15,24 +15,29 @@ __mediaSources = {}
 __controllers = {}
 __activeSource = None
 __activeQueue = None
-__queue = QueueContainer()
 __initalized = False
 
 def registerSource(sourceId, sourceObj):
+    global __runningPlugins
     log.msg("Registering Source: %s" % sourceId)
     if sourceId in __runningPlugins:
         __mediaSources[sourceId] = __runningPlugins[sourceId]
     else:
         log.msg("Creating new instance of plugin")
-        __mediaSources[sourceId] = sourceObj()
+        p = sourceObj()
+        __runningPlugins[sourceId] = p
+        __mediaSources[sourceId] = p
 
 def registerController(controllerId, controllerObj):
+    global __runningPlugins
     log.msg("Registering Controller: %s" % controllerId)
     if controllerId in __runningPlugins:
         __controllers[controllerId] = __runningPlugins[controllerId]
     else:
         log.msg("Creating new instance of plugin")
-        __controllers[controllerId] = controllerObj()
+        p = controllerObj()
+        __runningPlugins[controllerId] = p
+        __controllers[controllerId] = p
 
 def initiateSearch(search_context, text):
     """
@@ -89,8 +94,10 @@ def initiateSearch(search_context, text):
 def queue(mediaObj):
     log.msg("Queueing %s" % mediaObj)
     
-    qob = QueueObject(mediaObj)
-    __queue.add(qob)
+    qob = Queue(mediaObj)
+    session = Session()
+    session.add(qob)
+    session.commit()
     
     if not __activeSource:
         play()
@@ -98,7 +105,6 @@ def queue(mediaObj):
         for key, mediactr in __controllers.items():
             log.msg("\tSending Queue Change to %s" % key)
         mediactr.queueUpdated(QueueActions.ADD, qob)
-    
 
 def pause():
     if __activeSource:
@@ -108,33 +114,40 @@ def resume():
     if __activeSource:
         __activeSource.resume()
 
-def stop():
+def skip():
     if __activeSource:
         __activeSource.stop()
+        __activeSource = None
+        play()
 
 def play():
     global __activeSource
     global __activeQueue
-    nextItem = __queue.getNext()
+    
+    session = Session()
+    nextItem = session.query(Queue).filter(Queue.play_date==None).order_by(Queue.queue_date).first()
+    
     if nextItem:
-        log.msg("Playing %s" % nextItem.mediaObj)
-        __activeSource = nextItem.mediaObj.source
+        log.msg("Playing %s" % nextItem.media_object)
+        __activeSource = __runningPlugins[str(nextItem.media_object.source)]
         __activeQueue = nextItem
-        __activeSource.play(nextItem.mediaObj.mid)
+        nextItem.setPlayed()
+        __activeSource.play(nextItem.media_object)
+        session.commit()
         
         for key, mediactr in __controllers.items():
             log.msg("\tSending Queue Change to %s" % key)
-        mediactr.queueUpdated(QueueActions.PLAYED, __activeQueue)
+        mediactr.queueUpdated(QueueActions.PLAY, __activeQueue)
 
     else:
         log.msg("Queue Is Empty")
         #TODO: Radio
 
 def getQueuedItems():
-    return __queue.getQueuedItems()
+    return Session().query(Queue).filter(Queue.play_date==None).order_by(Queue.queue_date)
 
 def getPlayedItems():
-    return __queue.getPlayedItems()
+    return Session().query(Queue).filter(Queue.play_date!=None).order_by(Queue.queue_date)
 
 def updateStatus(status, text):
     global _activeSource
@@ -165,10 +178,11 @@ if not __initalized:
     
     # Create the imported Media Sources and register with GrooveBot
     for plugin in MediaSource.plugins:
-        registerSource(plugin.__name__, plugin)
+        registerSource(plugin.__module__, plugin)
     
     # Create the imported Media Controllers and register with GrooveBot
     for plugin in MediaController.plugins:
-        registerController(plugin.__name__, plugin)
+        registerController(plugin.__module__, plugin)
                 
     log.msg("GrooveBot Plugins Loaded")
+    play()
