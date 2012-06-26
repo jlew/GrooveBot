@@ -1,5 +1,5 @@
 from groovebot.ActionType import MediaController
-from groovebot.GrooveBot import queue, initiateSearch, getStatus, getQueuedItems
+from groovebot.GrooveBot import queue, initiateSearch, getStatus, getQueuedItems, pause, resume, skip
 from groovebot.SearchContext import SearchContext
 from twisted.internet import reactor, task
 from twisted.python import log, reflect
@@ -221,8 +221,18 @@ class Screen(CursesStdIO):
         elif c == curses.KEY_ENTER or c == 10:
             line = self.searchText
             self.searchText = ''
-            initiateSearch(SearchContext(self), line)
-            #self.updateDisplay()
+            
+            if line == "pause":
+                pause()
+                
+            elif line == "resume":
+                resume()
+                
+            elif line == "skip":
+                skip()
+                
+            else:
+                initiateSearch(SearchContext(self), line)
 
         elif c <= 256:
             if len(self.searchText) == self.cols-2: return

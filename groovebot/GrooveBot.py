@@ -117,8 +117,8 @@ def resume():
 def skip():
     if __activeSource:
         __activeSource.stop()
-        __activeSource = None
-        play()
+        #__activeSource = None
+        #play()
 
 def play():
     global __activeSource

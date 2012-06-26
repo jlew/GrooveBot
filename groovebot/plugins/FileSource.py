@@ -127,6 +127,9 @@ class FileData(MediaSource):
 
     def pause(self):
         self.fp.pause()
+        
+    def resume(self):
+        self.fp.resume()
 
     def stop(self):
         self.fp.stop()
