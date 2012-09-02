@@ -1,6 +1,7 @@
 from groovebot.ActionType import MediaController
 from groovebot.GrooveBot import queue, initiateSearch, getStatus, getQueuedItems, pause, resume, skip, remQueuedItem
 from groovebot.SearchContext import SearchContext
+from groovebot.db import Session, MediaObject
 
 from twisted.words.protocols.irc import IRCClient
 from twisted.internet.protocol import ReconnectingClientFactory
@@ -97,7 +98,7 @@ class IrcController(MediaController):
         # create factory protocol and application
         self.factory = JlewBotFactory(protocol=IrcControllerProtocol)
 
-        for command in ['add','remove','show','pause','resume','skip','status','dump','radio']:
+        for command in ['search','add','remove','pause','resume','skip','status','dump']:
             self.factory.register_command(command, self.cmd)
 
         # connect factory to this host and port
@@ -119,9 +120,9 @@ class IrcController(MediaController):
             responder("ok")
 
         elif command == "status":
-            queue, statusLookup = getStatus()
-            if queue:
-                title = str(queue.media_object)
+            queueObj, statusLookup = getStatus()
+            if queueObj:
+                title = str(queueObj.media_object)
             else:
                 title = ""
         
@@ -147,22 +148,34 @@ class IrcController(MediaController):
             else:
                 responder("Failed to remove")
 
-        elif command == "add":
+        elif command == "search":
             s = SearchContext(self)
             s.responder = responder
             initiateSearch(s, msg)
+
+        elif command == "add":
+            try:
+                dbId = int(msg)
+            except:
+                responder("Expecting Resource Id")
+                return
+                
+            item = Session().query(MediaObject).filter(MediaObject.id==dbId).first()
+            if item:
+                queue(item)
+                responder("ok")
+            else:
+                responder("Not found")
                 
         
 
     def searchCompleted(self, context, search_results):
         l = len(search_results)
-        if l == 1:
-            queue(search_results[0])
-        elif l > 1:
+        if l > 0:
             context.responder("Found %d matches" % l)
             for i, media_item in enumerate(search_results):
-                msg  = "\"%s\" by \"%s\" on \"%s\"." % \
-                    (media_item.title, media_item.artist, media_item.album)
+                msg  = "%d: \"%s\" by \"%s\" on \"%s\"." % \
+                    (media_item.id, media_item.title, media_item.artist, media_item.album)
                 context.responder(msg.encode("UTF-8"))
                 if i == 10:
                     if l > 10:

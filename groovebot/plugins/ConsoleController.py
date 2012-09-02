@@ -44,7 +44,7 @@ class ConsoleReader(MediaController):
                 (media_item.title, media_item.artist, media_item.album)
         
         # play last one DEBUG!!!!!
-        if media_item:
+        if media_item and media_item.source==self.__module__:
             queue(media_item)
             
     def queueUpdated(self, action, queueObject):

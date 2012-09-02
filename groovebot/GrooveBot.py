@@ -104,7 +104,7 @@ def queue(mediaObj):
     else:
         for key, mediactr in __controllers.items():
             log.msg("\tSending Queue Change to %s" % key)
-        mediactr.queueUpdated(QueueActions.ADD, qob)
+            mediactr.queueUpdated(QueueActions.ADD, qob)
 
 def pause():
     if __activeSource:
@@ -149,7 +149,22 @@ def getQueuedItems():
 def getPlayedItems():
     return Session().query(Queue).filter(Queue.play_date!=None).order_by(Queue.queue_date)
 
-def updateStatus(status, text):
+def remQueuedItem(remId):
+    mysession = Session()
+    item = mysession.query(Queue).filter(Queue.id==remId, Queue.play_date==None).first()
+    
+    if item:
+        mysession.delete(item)
+        mysession.commit()
+
+        for key, mediactr in __controllers.items():
+            log.msg("\tSending Queue Change to %s" % key)
+            mediactr.queueUpdated(QueueActions.REMOVE, item.media_object)
+        return True
+            
+    return False
+
+def updateStatus(status, text, mediaObject=None):
     global _activeSource
     global _activeQueue
     log.msg("Status %s: %s" %(status, text))
@@ -157,6 +172,10 @@ def updateStatus(status, text):
         __activeSource = None
         __activeQueue = None
         play()
+
+    for key, mediactr in __controllers.items():
+        log.msg("\tSending Status Update to %s" % key)
+        mediactr.statusUpdate(status, text, mediaObject)
 
 def getStatus():
     if __activeSource:
