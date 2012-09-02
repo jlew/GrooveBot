@@ -191,7 +191,8 @@ if not __initalized:
     # Import Sources
     for f in os.listdir(os.path.join(os.path.dirname(__file__), "plugins")):
         module_name, ext = os.path.splitext(f)
-        if module_name != "__init__" and ext == '.py':
+        if module_name != "__init__" and\
+            (ext == '.py' or os.path.isdir(os.path.join(os.path.dirname(__file__), "plugins", f))):
             log.msg('importing Plugin: %s' % module_name)
             __import__("groovebot.plugins." + module_name)
     
