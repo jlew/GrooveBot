@@ -122,6 +122,8 @@ class FileData(MediaSource):
         for attribute in mediaObject.attributes:
             if attribute.key==u"filename":
                 self.fp.playFile(attribute.value)
+		state, text = self.status()
+		updateStatus(state, text, mediaObject)
                 return
         updateStatus(States.STOP, "Did Not Find Filename Attribute")
 

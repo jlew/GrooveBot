@@ -6,8 +6,8 @@ class MediaController(object):
     def __init__(self):
         pass
 
-    def statusUpdate(self, status):
-        print "Status Changed: ", status
+    def statusUpdate(self, status, text, mediaObject):
+        print "Status Changed: ", status, text, mediaObject
         
     def queueUpdated(self, action, queueObject):
         print "Queued Updated", action, queueObject

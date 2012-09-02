@@ -60,6 +60,8 @@ class TextBlock:
         self.height = height
         self.width = width
         self.scroll = scroll
+        self.cursor = 0
+        self.offset = 0
         
 
     def add_message(self, message):
@@ -73,13 +75,35 @@ class TextBlock:
         self.screen.box()
         self.screen.addstr(1,1, self.title, curses.A_BOLD)
         self.screen.hline(2,1, curses.ACS_HLINE, self.width - 2)
+        
         if self.scroll:
-            msg = self.messages[-(self.height - 4):]
+            lb = max(len(self.messages) - (self.height - 4) - self.offset, 0)
+            hb = min(lb + (self.height-4), len(self.messages))
         else:
-            msg = self.messages[0:(self.height - 4)]
-        for i, msg in enumerate( msg ):
-            self.screen.addstr(i + 3, 2, msg)
+            lb = 0 + self.offset
+            hb = min(len(self.messages), lb + (self.height-4))
+           
+        for i, msg in enumerate( [self.messages[x] for x in range(lb,hb)] ):
+            if i == self.cursor:
+                self.screen.addstr(i + 3, 2, msg, curses.color_pair(3))
+            else:
+                self.screen.addstr(i + 3, 2, msg)
         self.screen.refresh()
+        
+    def moveDown(self):
+        if self.cursor < self.height-4:
+            if self.cursor < len(self.messages)-1:
+                self.cursor += 1
+        elif self.offset < len(self.messages)-(self.height-3):
+            self.offset += 1
+            
+    def moveUp(self):
+        print self.cursor, self.offset, len(self.messages), self.height-4,\
+         len(self.messages) - (self.height - 4) - self.offset
+        if self.cursor > 0:
+            self.cursor -= 1
+        elif len(self.messages) - (self.height - 4) - self.offset > 0:
+            self.offset -= 1
 
 class ProgressBar:
     def __init__(self, parent_screen, x,y,width, color1, color2, title=None):
@@ -216,7 +240,11 @@ class Screen(CursesStdIO):
 
         if c == curses.KEY_BACKSPACE:
             self.searchText = self.searchText[:-1]
-            #self.updateDisplay()
+            
+        elif c == curses.KEY_UP:
+            self.logBox.moveUp()
+        elif c == curses.KEY_DOWN:
+            self.logBox.moveDown()
 
         elif c == curses.KEY_ENTER or c == 10:
             line = self.searchText
