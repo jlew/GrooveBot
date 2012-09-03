@@ -202,8 +202,8 @@ def remQueuedItem(remId):
     return False
 
 def updateStatus(status, text, mediaObject=None):
-    global _activeSource
-    global _activeQueue
+    global __activeSource
+    global __activeQueue
     log.msg("Status %s: %s" %(status, text))
     
     for key, mediactr in __controllers.items():
