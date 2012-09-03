@@ -7,6 +7,7 @@ from groovebot.db import Session
 from groovebot.db import MediaObject, MediaObjectAttribute
 import os
 from mutagen import mutagen
+from mutagen.easyid3 import EasyID3
 from hashlib import sha1
 
 from twisted.internet import reactor
@@ -15,8 +16,12 @@ from sqlalchemy import or_
 
 class FileData(MediaSource):
     def __init__(self):
-        
+
+        self.playingObj = None
+
         def stateChange(state, text):
+            if self.playingObj:
+                text = "%s %s" % (text, self.playingObj)
             updateStatus(state, text)
         self.fp = FilePlayer(stateChange)
        
@@ -27,9 +32,10 @@ class FileData(MediaSource):
         session = Session()
         fileList = []
         hashList = []
-        for root, dirs, files in os.walk("/home/jlew/Music"):
-            for f in files:
-                fileList.append( root + "/" + f )
+        for d in ["/home/jlew/Music","/home/jlew/BACKUP_TO_SORT/Music"]:
+            for root, dirs, files in os.walk(d):
+                for f in files:
+                    fileList.append( root + "/" + f )
         
         fileLen = len(fileList)
         print "Found %d Files" % fileLen
@@ -65,6 +71,10 @@ class FileData(MediaSource):
                 session.flush() # Flush the session so we get the ID
                 session.add(MediaObjectAttribute(m.id,u"filename", filePath))
                 session.add(MediaObjectAttribute(m.id,u"filetime", fileTime))
+
+            if (i % 500) == 0:
+                print "Commiting Batch"
+                session.commit()
             
         session.commit()
         
@@ -84,32 +94,55 @@ class FileData(MediaSource):
     
     
     def getTagInfo(self, f):
-        tagFile = mutagen.File(f)
-            
+        tagFile = None
+        try:
+            tagFile = EasyID3(f)
+        except:
+            tagFile = mutagen.File(f)
+
         artist = u"-UNKNOWN-"
-        if tagFile.has_key("artist"):
-            artist = tagFile.get("artist")[0].decode('UTF-8')
-    
         title = u"-UNKNOWN-"
-        if tagFile.has_key("title"):
-            title = tagFile.get("title")[0].decode('UTF-8')
-    
         album = u"-UNKNOWN-"
-        if tagFile.has_key("album"):
-            album = tagFile.get("album")[0].decode('UTF-8')
+
+        if tagFile:
+                if tagFile.has_key("artist"):
+                    artist = tagFile.get("artist")[0].decode('UTF-8')
+            
+                
+                if tagFile.has_key("title"):
+                    title = tagFile.get("title")[0].decode('UTF-8')
+            
+                
+                if tagFile.has_key("album"):
+                    album = tagFile.get("album")[0].decode('UTF-8')
         return title, artist, album
     
-    def search(self, text):
-        mediaList = []
-        session = Session()
+    def search(self, searchReq):
+        query = Session().query(MediaObject).filter(MediaObject.source==self.__module__)
         
-        searchText = "%" + text + "%"
-        query = session.query(MediaObject).filter(MediaObject.source==self.__module__)\
-            .filter(or_(
-                        MediaObject.title.like(searchText),
-                        MediaObject.album.like(searchText),
-                        MediaObject.artist.like(searchText)
-                        ))
+        if isinstance(searchReq, dict):
+            search_title = searchReq.get('title')
+            search_artist = searchReq.get('artist')
+            search_album = searchReq.get('album')
+
+            if search_title:
+                query = query.filter(MediaObject.title.like("%"+search_title+"%"))
+
+            if search_artist:
+                query = query.filter(MediaObject.artist.like("%"+search_artist+"%"))
+
+            if search_album:
+                query = query.filter(MediaObject.album.like("%"+search_album+"%"))
+        else:
+            searchText = "%" + searchReq + "%"
+
+            query = query.filter(or_(
+                MediaObject.title.like(searchText),
+                MediaObject.album.like(searchText),
+                MediaObject.artist.like(searchText)
+                ))
+            
+        mediaList = []
         
         for row in query:
             mediaList.append(row)
@@ -121,9 +154,8 @@ class FileData(MediaSource):
         
         for attribute in mediaObject.attributes:
             if attribute.key==u"filename":
+                self.playingObj = mediaObject
                 self.fp.playFile(attribute.value)
-		state, text = self.status()
-		updateStatus(state, text, mediaObject)
                 return
         updateStatus(States.STOP, "Did Not Find Filename Attribute")
 
@@ -135,6 +167,7 @@ class FileData(MediaSource):
 
     def stop(self):
         self.fp.stop()
+        self.playingObj
 
     def status(self):
         state, pos, dur = self.fp.get_time()

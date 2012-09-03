@@ -38,14 +38,15 @@ class ConsoleReader(MediaController):
 
 
     def searchCompleted(self, context, search_results):
-        media_item = None
-        for media_item in search_results:
-            print "Searh Result: \"%s\" by \"%s\" on \"%s\"." % \
-                (media_item.title, media_item.artist, media_item.album)
+        if context.source==self.__module__:
+            media_item = None
+            for media_item in search_results:
+                print "Searh Result: \"%s\" by \"%s\" on \"%s\"." % \
+                    (media_item.title, media_item.artist, media_item.album)
         
-        # play last one DEBUG!!!!!
-        if media_item and media_item.source==self.__module__:
-            queue(media_item)
+            # play last one DEBUG!!!!!
+            if media_item:
+                queue(media_item)
             
     def queueUpdated(self, action, queueObject):
         print "Queue %s @%s" % (action,queueObject)

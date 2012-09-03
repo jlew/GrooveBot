@@ -5,7 +5,7 @@ from twisted.python import log
 
 # Import GrooveBot Classes
 from groovebot.ActionType import MediaSource, MediaController
-from groovebot.Constants import States, QueueActions
+from groovebot.Constants import States, QueueActions, SearchKeys
 
 from groovebot.db import Queue, Session
 import os
@@ -63,6 +63,37 @@ def initiateSearch(search_context, text):
     searches = []
     log.msg("Searching: %s" % text)
 
+    if not isinstance(text, dict) :
+        
+        artistStart = text.find(SearchKeys.ARTIST)
+        titleStart = text.find(SearchKeys.TITLE)
+        albumStart = text.find(SearchKeys.ALBUM)
+
+        if max(artistStart, titleStart, albumStart) != -1:
+            d = dict()
+            
+            def pullout(text2):
+                if text2.find(SearchKeys.ARTIST) != -1:
+                    text2 = text2[0:text2.find(SearchKeys.ARTIST)]
+
+                if text2.find(SearchKeys.ALBUM) != -1:
+                    text2 = text2[0:text2.find(SearchKeys.ALBUM)]
+
+                if text2.find(SearchKeys.TITLE) != -1:
+                    text2 = text2[0:text2.find(SearchKeys.TITLE)]
+                return text2.strip()
+
+            if artistStart != -1:
+                d['artist'] = pullout(text[artistStart+len(SearchKeys.ARTIST) : len(text)])
+
+            if titleStart != -1:
+                d['title'] = pullout(text[titleStart+len(SearchKeys.TITLE) : len(text)])
+                
+            if albumStart != -1:
+                d['album'] = pullout(text[albumStart+len(SearchKeys.ALBUM) : len(text)])
+            log.msg("Parsed Search: " + str(d))
+            text = d
+
     # Fire off search in parallel
     for key, mediasrc in __mediaSources.items():
         log.msg("\tSending Search Request to %s" % key)
@@ -94,17 +125,23 @@ def initiateSearch(search_context, text):
 def queue(mediaObj):
     log.msg("Queueing %s" % mediaObj)
     
-    qob = Queue(mediaObj)
     session = Session()
-    session.add(qob)
-    session.commit()
+    inQueue = session.query(Queue).filter(Queue.media_object==mediaObj).filter(Queue.play_date==None).first()
+
+    if not inQueue:
+        qob = Queue(mediaObj)
+        session.add(qob)
+        session.commit()
     
-    if not __activeSource:
-        play()
+        if not __activeSource:
+            play()
+        else:
+            for key, mediactr in __controllers.items():
+                log.msg("\tSending Queue Change to %s" % key)
+                mediactr.queueUpdated(QueueActions.ADD, qob)
+        return True
     else:
-        for key, mediactr in __controllers.items():
-            log.msg("\tSending Queue Change to %s" % key)
-            mediactr.queueUpdated(QueueActions.ADD, qob)
+        return False
 
 def pause():
     if __activeSource:
@@ -151,7 +188,7 @@ def getPlayedItems():
 
 def remQueuedItem(remId):
     mysession = Session()
-    item = mysession.query(Queue).filter(Queue.id==remId, Queue.play_date==None).first()
+    item = mysession.query(Queue).filter(Queue.media_object_id==remId, Queue.play_date==None).first()
     
     if item:
         mysession.delete(item)
@@ -159,7 +196,7 @@ def remQueuedItem(remId):
 
         for key, mediactr in __controllers.items():
             log.msg("\tSending Queue Change to %s" % key)
-            mediactr.queueUpdated(QueueActions.REMOVE, item.media_object)
+            mediactr.queueUpdated(QueueActions.REMOVE, item)
         return True
             
     return False
@@ -168,14 +205,16 @@ def updateStatus(status, text, mediaObject=None):
     global _activeSource
     global _activeQueue
     log.msg("Status %s: %s" %(status, text))
+    
+    for key, mediactr in __controllers.items():
+        log.msg("\tSending Status Update to %s" % key)
+        mediactr.statusUpdate(status, text, mediaObject)
+        
     if status == States.STOP:
         __activeSource = None
         __activeQueue = None
         play()
 
-    for key, mediactr in __controllers.items():
-        log.msg("\tSending Status Update to %s" % key)
-        mediactr.statusUpdate(status, text, mediaObject)
 
 def getStatus():
     if __activeSource:

@@ -3,6 +3,7 @@ from groovebot.GrooveBot import queue, initiateSearch, getStatus, getQueuedItems
 from groovebot.SearchContext import SearchContext
 from groovebot.db import Session, MediaObject
 from groovebot.plugins.IrcController.JlewBot import JlewBot, JlewBotFactory
+from groovebot.Constants import QueueActions
 
 from twisted.internet import reactor
 
@@ -59,7 +60,7 @@ class IrcControllerProtocol(JlewBot):
             if qitems:
                 responder("%d item(s) in the queue" % len(qitems))
                 for item in qitems:
-                    msg = "%i: %s" % (item.id, item.media_object)
+                    msg = "%i: %s" % (item.media_object.id, item.media_object)
                     responder(msg.encode("UTF-8"))
 
         elif command == REMOVE:
@@ -82,8 +83,10 @@ class IrcControllerProtocol(JlewBot):
                 
             item = Session().query(MediaObject).filter(MediaObject.id==dbId).first()
             if item:
-                queue(item)
-                responder("ok")
+                if queue(item):
+                    responder("ok")
+                else:
+                    responder("Already in Queue")
             else:
                 responder("Not found")
 
@@ -107,21 +110,22 @@ class IrcController(MediaController):
 
     def searchCompleted(self, context, search_results):
         l = len(search_results)
-        if l > 0:
-            context.responder("Found %d matches" % l)
-            for i, media_item in enumerate(search_results):
-                msg  = "%d: \"%s\" by \"%s\" on \"%s\"." % \
-                    (media_item.id, media_item.title, media_item.artist, media_item.album)
-                context.responder(msg.encode("UTF-8"))
-                if i == 10:
-                    if l > 10:
-                        context.responder("...")
-                    break;
-        else:
-            context.responder("No results found")
+        context.responder("Found %d matches" % l)
+        for i, media_item in enumerate(search_results):
+            msg  = "%d: \"%s\" by \"%s\" on \"%s\"." % \
+                (media_item.id, media_item.title, media_item.artist, media_item.album)
+            context.responder(msg.encode("UTF-8"))
+            if i == 10:
+                if l > 10:
+                    context.responder("...")
+                break;
+
 
     def queueUpdated(self, action, queueObject):
-        msg = "Queue %s: %s" % (action,queueObject)
+        if action == QueueActions.PLAY:
+            return
+            
+        msg = "Queue %s: %s" % (action,queueObject.media_object)
         if self.factory.active_bot:
             self.factory.active_bot.me(self.factory.channel, msg.encode("UTF-8"))
         else:
@@ -129,7 +133,7 @@ class IrcController(MediaController):
 
     def statusUpdate(self, status, text, mediaObject):
         if mediaObject:
-            msg = "%s %s %s" % (status, text, mediaObject)
+            msg = "%s %s" % (status, mediaObject)
         else:
             msg = "%s %s" % (status, text)
             
