@@ -100,9 +100,11 @@ class IrcController(MediaController):
 
         bot_name = config.get("BotConfig", "name")
         bot_channel = config.get("BotConfig", "channel")
+        bot_flood_rate = config.getfloat("BotConfig", "flood_rate")
         
         # create factory protocol and application
-        self.factory = JlewBotFactory(protocol=IrcControllerProtocol, bot_name=bot_name, channel=bot_channel)
+        self.factory = JlewBotFactory(protocol=IrcControllerProtocol,
+            bot_name=bot_name, channel=bot_channel, line_rate=bot_flood_rate)
 
         # connect factory to this host and port
         reactor.connectTCP(config.get("BotConfig", "server"), config.getint("BotConfig", "port"), self.factory)

@@ -47,13 +47,14 @@ class JlewBotFactory(ReconnectingClientFactory):
     protocol = JlewBot
     active_bot = None
 
-    def __init__(self, protocol=protocol, bot_name="JlewBot", channel="#jlewbot"):
+    def __init__(self, protocol=protocol, bot_name="JlewBot", channel="#jlewbot", line_rate=1):
         self.protocol = protocol
         self.channel = channel
         self.registered_commands = {}
         self.default_cmd_handler = self.__default_cmd
         IRCClient.nickname = bot_name
         IRCClient.realname = bot_name
+        IRCClient.lineRate = line_rate
 
     def buildProtocol(self, address):
         """
