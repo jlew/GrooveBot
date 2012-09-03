@@ -174,7 +174,7 @@ def play():
         
         for key, mediactr in __controllers.items():
             log.msg("\tSending Queue Change to %s" % key)
-        mediactr.queueUpdated(QueueActions.PLAY, __activeQueue)
+            mediactr.queueUpdated(QueueActions.PLAY, __activeQueue)
 
     else:
         log.msg("Queue Is Empty")

@@ -71,7 +71,6 @@ class TextBlock:
 
     def draw(self):
         self.screen.clear()
-        self.screen.box()
         self.screen.addstr(1,1, self.title, curses.A_BOLD)
         self.screen.hline(2,1, curses.ACS_HLINE, self.width - 2)
         if self.scroll:
@@ -80,6 +79,7 @@ class TextBlock:
             msg = self.messages[0:(self.height - 4)]
         for i, msg in enumerate( msg ):
             self.screen.addstr(i + 3, 2, msg)
+        self.screen.box()
         self.screen.refresh()
 
 class ProgressBar:
