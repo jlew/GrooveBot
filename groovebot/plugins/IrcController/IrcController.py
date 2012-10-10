@@ -1,14 +1,17 @@
-from groovebot.ActionType import MediaController
+from groovebot.PluginFramework import MediaController
 from groovebot.GrooveBot import queue, initiateSearch, getStatus, getQueuedItems, pause, resume, skip, remQueuedItem
 from groovebot.SearchContext import SearchContext
 from groovebot.db import Session, MediaObject
 from groovebot.plugins.IrcController.JlewBot import JlewBot, JlewBotFactory
 from groovebot.Constants import QueueActions
+from groovebot.GrooveBot import setConfig, getLogger
 
 from twisted.internet import reactor
 
 import ConfigParser
 import os
+
+log = getLogger("Plugin: Irc Controller")
 
 SEARCH = "search"
 ADD = "add"
@@ -94,21 +97,55 @@ class IrcControllerProtocol(JlewBot):
 
 class IrcController(MediaController):
 
-    def __init__(self):
-        config = ConfigParser.ConfigParser()
-        config.read(os.path.join(os.path.dirname(__file__),'config.ini'))
+    def __init__(self, config):
+        super(MediaController, self).__init__(config)
 
-        bot_name = config.get("BotConfig", "name")
-        bot_channel = config.get("BotConfig", "channel")
-        bot_flood_rate = config.getfloat("BotConfig", "flood_rate")
+        self.bot_name = config.get("name", "GrooveBot")
+        self.bot_channel = config.get("channel", "#GrooveBot")
+        self.bot_server = config.get("server", "irc.freenode.net")
+        self.bot_port = config.get("port", "6667")
+        self.bot_flood_rate = config.get("flood_rate", "0.5")
         
-        # create factory protocol and application
+        if len(config) == 0:
+            setConfig(self.__module__, "name", self.bot_name)
+            setConfig(self.__module__, "channel", self.bot_channel)
+            setConfig(self.__module__, "server", self.bot_server)
+            setConfig(self.__module__, "port", self.bot_port)
+            setConfig(self.__module__, "flood_rate", self.bot_flood_rate)
+        
+       
+    def start_irc(self):
+        log("Setting IRC Connection")
+         # create factory protocol and application
         self.factory = JlewBotFactory(protocol=IrcControllerProtocol,
-            bot_name=bot_name, channel=bot_channel, line_rate=bot_flood_rate)
+            bot_name=self.bot_name, channel=self.bot_channel, line_rate=self.bot_flood_rate)
 
         # connect factory to this host and port
-        reactor.connectTCP(config.get("BotConfig", "server"), config.getint("BotConfig", "port"), self.factory)
+        self.reactor_connection = reactor.connectTCP(self.bot_server, int(self.bot_port), self.factory)
+
+
+    def configuration_change(self, key, value):
+        log( "Reconfiguration Requested: [%s] %s" % (key, value))
+        if key == "name":
+            self.bot_name = value
+
+        elif key == "channel":
+            self.bot_channel = value
+
+        elif key == "server":
+            self.bot_server = value
+
+        elif key == "port":
+            self.bot_port = value
+
+        elif key == "flood_rate":
+            self.bot_flod_rate = value
+
+        else:
+            log("Unsupported Config")
+            return
         
+        self.reactor_connection.disconnect().addCallback(self.start_irc)
 
     def searchCompleted(self, context, search_results):
         l = len(search_results)
@@ -131,7 +168,7 @@ class IrcController(MediaController):
         if self.factory.active_bot:
             self.factory.active_bot.me(self.factory.channel, msg.encode("UTF-8"))
         else:
-            print "NO ACTIVE BOT"
+            log("NO ACTIVE BOT")
 
     def statusUpdate(self, status, text, mediaObject):
         if mediaObject:
@@ -142,7 +179,7 @@ class IrcController(MediaController):
         if self.factory.active_bot:
             self.factory.active_bot.me(self.factory.channel, msg.encode("UTF-8"))
         else:
-            print "NO ACTIVE BOT"
+            log("NO ACTIVE BOT")
 
 
 

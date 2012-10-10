@@ -1,13 +1,19 @@
-from groovebot.ActionType import MediaController
-from groovebot.GrooveBot import queue, initiateSearch, getStatus, getQueuedItems, pause, resume, skip
+from groovebot.PluginFramework import MediaController
+from groovebot.GrooveBot import queue, initiateSearch, getStatus, getQueuedItems, pause, resume, skip, getLogger
 from groovebot.SearchContext import SearchContext
 from twisted.internet import reactor, task
-from twisted.python import log, reflect
+from twisted.python import log as logger, reflect
 import curses
 from datetime import datetime
 
+log = getLogger("Plugin: Console Controller")
+
+
 class ConsoleReader(MediaController):
-    def __init__(self):
+    
+    def __init__(self, config):
+        super(MediaController, self).__init__(config)
+        
         class logObserver:
             def __init__(self, con):
                 self.con = con
@@ -30,7 +36,7 @@ class ConsoleReader(MediaController):
 
         stdscr = curses.initscr() # initialize curses
         self.screen = Screen(stdscr)   # create Screen object
-        log.addObserver(logObserver(self.screen).emit)
+        logger.addObserver(logObserver(self.screen).emit)
         stdscr.refresh()
         reactor.addReader(self.screen) # add screen object as a reader to the reactor
         
@@ -38,18 +44,18 @@ class ConsoleReader(MediaController):
 
 
     def searchCompleted(self, context, search_results):
-        if context.source==self.__module__:
+        if context.source==self.screen:
             media_item = None
             for media_item in search_results:
-                print "Searh Result: \"%s\" by \"%s\" on \"%s\"." % \
-                    (media_item.title, media_item.artist, media_item.album)
+                log("Searh Result: \"%s\" by \"%s\" on \"%s\"." % \
+                    (media_item.title, media_item.artist, media_item.album))
         
             # play last one DEBUG!!!!!
             if media_item:
                 queue(media_item)
             
     def queueUpdated(self, action, queueObject):
-        print "Queue %s @%s" % (action,queueObject)
+        log("Queue %s @%s" % (action,queueObject))
         self.screen.updateQueue()
 
 

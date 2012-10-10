@@ -1,43 +1,31 @@
 # Import twisted libraries
 from twisted.internet.defer import DeferredList
+from twisted.internet import reactor
 from twisted.internet.threads import deferToThread
-from twisted.python import log
+from twisted.python import log as logger
 
 # Import GrooveBot Classes
-from groovebot.ActionType import MediaSource, MediaController
+from groovebot.PluginFramework import MediaController, MediaSource, RadioSource
 from groovebot.Constants import States, QueueActions, SearchKeys
 
 from groovebot.db import Queue, Session
+
+from ConfigParser import ConfigParser
 import os
 
+CONFIG_FILE_NAME = "gb.ini"
+__config = ConfigParser(allow_no_value=True)
 __runningPlugins = {}
-__mediaSources = {}
-__controllers = {}
 __activeSource = None
 __activeQueue = None
 __initalized = False
 
-def registerSource(sourceId, sourceObj):
-    global __runningPlugins
-    log.msg("Registering Source: %s" % sourceId)
-    if sourceId in __runningPlugins:
-        __mediaSources[sourceId] = __runningPlugins[sourceId]
-    else:
-        log.msg("Creating new instance of plugin")
-        p = sourceObj()
-        __runningPlugins[sourceId] = p
-        __mediaSources[sourceId] = p
+def getLogger(systemName):
+    def lg(msg):
+        logger.msg(msg, system=systemName)
+    return lg
 
-def registerController(controllerId, controllerObj):
-    global __runningPlugins
-    log.msg("Registering Controller: %s" % controllerId)
-    if controllerId in __runningPlugins:
-        __controllers[controllerId] = __runningPlugins[controllerId]
-    else:
-        log.msg("Creating new instance of plugin")
-        p = controllerObj()
-        __runningPlugins[controllerId] = p
-        __controllers[controllerId] = p
+__log = getLogger("GrooveBot Core")
 
 def initiateSearch(search_context, text):
     """
@@ -61,7 +49,7 @@ def initiateSearch(search_context, text):
             The text to be searched for in all the sources.
     """
     searches = []
-    log.msg("Searching: %s" % text)
+    __log("Searching: %s" % text)
 
     if not isinstance(text, dict) :
         
@@ -91,13 +79,14 @@ def initiateSearch(search_context, text):
                 
             if albumStart != -1:
                 d['album'] = pullout(text[albumStart+len(SearchKeys.ALBUM) : len(text)])
-            log.msg("Parsed Search: " + str(d))
+            __log("Parsed Search: " + str(d))
             text = d
 
     # Fire off search in parallel
-    for key, mediasrc in __mediaSources.items():
-        log.msg("\tSending Search Request to %s" % key)
-        searches.append(deferToThread(mediasrc.search, text))
+    for mediasrc in MediaSource.plugins:
+        if mediasrc.__module__ in __runningPlugins:
+            __log("\tSending Search Request to %s" % mediasrc.__module__)
+            searches.append(deferToThread(__runningPlugins[mediasrc.__module__].search, text))
 
     # When all searches return combine them.  The lists will be
     # returned as a list of a touples consisting of a sucess/failure
@@ -110,20 +99,21 @@ def initiateSearch(search_context, text):
         into master_result and passes it to all the registered
         controllers.
         """
-        log.msg("Search Returned from all sources")
+        __log("Search Returned from all sources")
         master_result = []
         for status, result in results:
             if status:
                 master_result += result
 
-        for key, mediactr in __controllers.items():
-            log.msg("\tSending Result to %s" % key)
-            mediactr.searchCompleted(search_context, master_result)
+        for mediactr in MediaController.plugins:
+            if mediactr.__module__ in __runningPlugins:
+                __log("\tSending Result to %s" % mediactr.__module__)
+                __runningPlugins[mediactr.__module__].searchCompleted(search_context, master_result)
 
     dl.addCallback(sendResults)
 
 def queue(mediaObj):
-    log.msg("Queueing %s" % mediaObj)
+    __log("Queueing %s" % mediaObj)
     
     session = Session()
     inQueue = session.query(Queue).filter(Queue.media_object==mediaObj).filter(Queue.play_date==None).first()
@@ -136,9 +126,10 @@ def queue(mediaObj):
         if not __activeSource:
             play()
         else:
-            for key, mediactr in __controllers.items():
-                log.msg("\tSending Queue Change to %s" % key)
-                mediactr.queueUpdated(QueueActions.ADD, qob)
+            for mediactr in MediaController.plugins:
+                if mediactr.__module__ in __runningPlugins:
+                    __log("\tSending Queue Change to %s" % mediactr.__module__)
+                    __runningPlugins[mediactr.__module__].queueUpdated(QueueActions.ADD, qob)
         return True
     else:
         return False
@@ -165,19 +156,20 @@ def play():
     nextItem = session.query(Queue).filter(Queue.play_date==None).order_by(Queue.queue_date).first()
     
     if nextItem:
-        log.msg("Playing %s" % nextItem.media_object)
+        __log("Playing %s" % nextItem.media_object)
         __activeSource = __runningPlugins[str(nextItem.media_object.source)]
         __activeQueue = nextItem
         nextItem.setPlayed()
         __activeSource.play(nextItem.media_object)
         session.commit()
         
-        for key, mediactr in __controllers.items():
-            log.msg("\tSending Queue Change to %s" % key)
-            mediactr.queueUpdated(QueueActions.PLAY, __activeQueue)
+        for mediactr in MediaController.plugins:
+            if mediactr.__module__ in __runningPlugins:
+                __log("\tSending Queue Change to %s" % mediactr.__module__)
+                __runningPlugins[mediactr.__module__].queueUpdated(QueueActions.PLAY, __activeQueue)
 
     else:
-        log.msg("Queue Is Empty")
+        __log("Queue Is Empty")
         #TODO: Radio
 
 def getQueuedItems():
@@ -193,10 +185,11 @@ def remQueuedItem(remId):
     if item:
         mysession.delete(item)
         mysession.commit()
-
-        for key, mediactr in __controllers.items():
-            log.msg("\tSending Queue Change to %s" % key)
-            mediactr.queueUpdated(QueueActions.REMOVE, item)
+        
+        for mediactr in MediaController.plugins:
+            if mediactr.__module__ in __runningPlugins:
+                __log("\tSending Queue Change to %s" % mediactr.__module__)
+                __runningPlugins[mediactr.__module__].queueUpdated(QueueActions.REMOVE, item)
         return True
             
     return False
@@ -204,11 +197,12 @@ def remQueuedItem(remId):
 def updateStatus(status, text, mediaObject=None):
     global __activeSource
     global __activeQueue
-    log.msg("Status %s: %s" %(status, text))
-    
-    for key, mediactr in __controllers.items():
-        log.msg("\tSending Status Update to %s" % key)
-        mediactr.statusUpdate(status, text, mediaObject)
+    __log("Status %s: %s" %(status, text))
+
+    for mediactr in MediaController.plugins:
+        if mediactr.__module__ in __runningPlugins:
+            __log("\tSending Status Update to %s" % mediactr.__module__)
+            __runningPlugins[mediactr.__module__].statusUpdate(status, text, mediaObject)
         
     if status == States.STOP:
         __activeSource = None
@@ -221,27 +215,57 @@ def getStatus():
         return __activeQueue, __activeSource.status()
     else:
         return None, (States.STOP, "")
+
+def setConfig(plugin, key, value):
+    __log("Setting config for %s: [%s] %s" % (plugin, key, value))
+
+    __config.set(plugin, key, value)
+
+    if __runningPlugins.has_key(plugin):
+        __runningPlugins[plugin].configuration_change(key, value)
     
+
+def flushConfig():
+    __log("Flushing Config")
+    with open(CONFIG_FILE_NAME, 'wb') as configfile:
+        __config.write(configfile)
+
 if not __initalized:
-    log.msg("Initalizing GrooveBot")
+    __log("Initalizing GrooveBot")
+    __log("Reading Config File")
+
+    __config.read(CONFIG_FILE_NAME)
+    
     __initalized = True
     
-    log.msg("Loading GrooveBot Plugins")
+    __log("Loading GrooveBot Plugins")
     # Import Sources
     for f in os.listdir(os.path.join(os.path.dirname(__file__), "plugins")):
         module_name, ext = os.path.splitext(f)
         if module_name != "__init__" and\
             (ext == '.py' or os.path.isdir(os.path.join(os.path.dirname(__file__), "plugins", f))):
-            log.msg('importing Plugin: %s' % module_name)
+            __log('importing Plugin: %s' % module_name)
             __import__("groovebot.plugins." + module_name)
+            
     
-    # Create the imported Media Sources and register with GrooveBot
-    for plugin in MediaSource.plugins:
-        registerSource(plugin.__module__, plugin)
-    
-    # Create the imported Media Controllers and register with GrooveBot
-    for plugin in MediaController.plugins:
-        registerController(plugin.__module__, plugin)
+    # Create the imported Plugins and register with GrooveBot Framework
+    for plugin in set(MediaController.plugins + MediaSource.plugins + RadioSource.plugins):
+        __log("Starting Plugin %s" % plugin.__module__)
+
+        # Create plugin section if not exist
+        if not __config.has_section(plugin.__module__):
+            __config.add_section(plugin.__module__)
+
+        plugin_cfg = dict(__config.items(plugin.__module__))
+        __log("Plugin Config: %s" % plugin_cfg)
+
+        if plugin_cfg.get("plugin_disabled", False) != "True":
+            __log("Initalizing Plugin %s" % plugin.__module__)
+            __runningPlugins[plugin.__module__] = plugin(plugin_cfg)
+        else:
+            __log("Plugin Disabled")
                 
-    log.msg("GrooveBot Plugins Loaded")
+    __log("GrooveBot Plugins Loaded")
     play()
+
+    reactor.addSystemEventTrigger("before", "shutdown", flushConfig)

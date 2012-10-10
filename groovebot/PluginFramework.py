@@ -1,41 +1,77 @@
-class MediaSourceMount(type):
+from twisted.python import log as logger
+
+from Constants import States, QueueActions
+
+def log(msg):
+    logger.msg(msg, system="Plugin Framework")
+
+class PluginMount(type):
+    """
+    METACLASS to capture plugins as they are loaded.
+    """
     def __init__(cls, name, bases, attrs):
-        if not hasattr(cls, 'plugins'):
-            # This branch only executes when processing the mount point itself.
-            # So, since this is a new plugin type, not an implementation, this
-            # class shouldn't be registered as a plugin. Instead, it sets up a
-            # list where plugins can be registered later.
+        if not hasattr(cls, "plugins"):
+            # Meta classes are being created for the first time
             cls.plugins = []
         else:
-            # This must be a plugin implementation, which should be registered.
-            # Simply appending it to the list is all that's needed to keep
-            # track of it later.
             cls.plugins.append(cls)
 
-class MediaControllerMount(type):
-    def __init__(cls, name, bases, attrs):
-        if not hasattr(cls, 'plugins'):
-            # This branch only executes when processing the mount point itself.
-            # So, since this is a new plugin type, not an implementation, this
-            # class shouldn't be registered as a plugin. Instead, it sets up a
-            # list where plugins can be registered later.
-            cls.plugins = []
-        else:
-            # This must be a plugin implementation, which should be registered.
-            # Simply appending it to the list is all that's needed to keep
-            # track of it later.
-            cls.plugins.append(cls)
+class Plugin(object):
+    def __init__(self, config):
+        log("Initalizing Plugin: %s" % self.__class__.__name__)
+        
+    def configuration_change(self, key, value):
+        log("Configuration Change: [%s] %s" % (key, value))
 
-class ConfigurableMount(type):
-    def __init__(cls, name, bases, attrs):
-        if not hasattr(cls, 'plugins'):
-            # This branch only executes when processing the mount point itself.
-            # So, since this is a new plugin type, not an implementation, this
-            # class shouldn't be registered as a plugin. Instead, it sets up a
-            # list where plugins can be registered later.
-            cls.plugins = []
-        else:
-            # This must be a plugin implementation, which should be registered.
-            # Simply appending it to the list is all that's needed to keep
-            # track of it later.
-            cls.plugins.append(cls)
+
+    
+class MediaController(Plugin):
+    __metaclass__ = PluginMount
+
+    def statusUpdate(self, status, text, mediaObject):
+        log("Status Changed: [%s] %s %s" % (status, text, mediaObject))
+        
+    def queueUpdated(self, action, queueObject):
+        log("Queued Updated: [%s] %s" % (action, queueObject))
+
+    def searchCompleted(self, context, search_results):
+        for media_item in search_results:
+            log("Searh Result: \"%s\" by \"%s\" on \"%s\"." % \
+                (media_item.title, media_item.artist, media_item.album))
+        
+
+class MediaSource(Plugin):
+    __metaclass__ = PluginMount
+        
+    def search(self, text):
+        return []
+
+    def moreInfo(self, mediaId):
+        pass
+
+    def play(self, mediaId):
+        pass
+
+    def pause(self):
+        pass
+
+    def stop(self):
+        pass
+
+    def status(self):
+        return States.STOP, "Stopped"
+
+class RadioSource(Plugin):
+    __metaclass__ = PluginMount
+    
+    def play(self, mediaId):
+        pass
+
+    def pause(self):
+        pass
+
+    def stop(self):
+        pass
+
+    def status(self):
+        return States.STOP, "Stopped"

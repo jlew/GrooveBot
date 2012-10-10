@@ -1,6 +1,6 @@
-from groovebot.ActionType import MediaSource
+from groovebot.PluginFramework import MediaSource
 from groovebot.utils.FilePlayer import FilePlayer
-from groovebot.GrooveBot import updateStatus
+from groovebot.GrooveBot import updateStatus, setConfig, getLogger
 from groovebot.Constants import States
 
 from groovebot.db import Session
@@ -14,9 +14,20 @@ from twisted.internet import reactor
 
 from sqlalchemy import or_
 
-class FileData(MediaSource):
-    def __init__(self):
+log = getLogger("Plugin: Console Controller")
 
+class FileData(MediaSource):
+    def __init__(self, config):
+        super(MediaSource, self).__init__(config)
+
+        self.file_list = config.get("scan_dirs","/Path/TO/Media/Dir;/path/2")
+        self.enable_scan = config.get("enable_scan","True")
+        
+        if len(config) == 0:
+            setConfig(self.__module__, "scan_dirs", self.file_list)
+            setConfig(self.__module__, "enable_scan", self.enable_scan)
+
+        
         self.playingObj = None
 
         def stateChange(state, text):
@@ -25,20 +36,23 @@ class FileData(MediaSource):
             updateStatus(state, text)
         self.fp = FilePlayer(stateChange)
        
-        reactor.callInThread(self.readFiles)
+        if self.enable_scan == "True":
+            reactor.callInThread(self.readFiles)
+        else:
+            log("DISABLED INDEXING")
         
     def readFiles(self):
-        print "Starting to index files"
+        log("Starting to index files")
         session = Session()
         fileList = []
         hashList = []
-        for d in ["/home/jlew/Music","/home/jlew/BACKUP_TO_SORT/Music"]:
+        for d in self.file_list.split(";"):
             for root, dirs, files in os.walk(d):
                 for f in files:
                     fileList.append( root + "/" + f )
         
         fileLen = len(fileList)
-        print "Found %d Files" % fileLen
+        log("Found %d Files" % fileLen)
         
         for i,f in enumerate(fileList):
             filePath = f.decode('utf-8')
@@ -61,10 +75,10 @@ class FileData(MediaSource):
                         item.artist = artist
                         item.album = album
                         attribute.value = fileTime
-                        print "Updated", item
+                        log("Updated %s" % item)
             else:    
                 title,artist,album = self.getTagInfo(f)
-                print "Indexed %s %s %s" % (artist,album, title)
+                log("Indexed %s %s %s" % (artist,album, title))
                 
                 m = MediaObject(self.__module__,title,artist,album, source_id = filePathSha)
                 session.add(m)
@@ -73,24 +87,24 @@ class FileData(MediaSource):
                 session.add(MediaObjectAttribute(m.id,u"filetime", fileTime))
 
             if (i % 500) == 0:
-                print "Commiting Batch"
+                log("Commiting Batch")
                 session.commit()
             
         session.commit()
         
         # Invalidate Files that are no longer found
-        print "Files indexed, checking for missing files"
+        log("Files indexed, checking for missing files")
         query = session.query(MediaObject)\
                 .filter(MediaObject.source==self.__module__)\
                 .filter(MediaObject.valid==True)
                 
         for obj in query:
             if obj.source_id not in hashList:
-                print "DEACTIVATED", obj
+                log("DEACTIVATED %s" % obj)
                 obj.setValidState(False)
         session.commit()
         session.close()
-        print "File Indexing Completed"
+        log("File Indexing Completed")
     
     
     def getTagInfo(self, f):
